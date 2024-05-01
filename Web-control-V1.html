@@ -1,0 +1,289 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RC Car Client</title>
+    <style>
+        /* Reset default margin and padding */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #F5F5F5;
+            color: #333;
+        }
+
+        .top-bar {
+            background-color: #E21E24;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #FFF;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #FFF;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"], input[type="number"] {
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #CCC;
+            border-radius: 5px;
+            box-shadow: none;
+        }
+
+        button {
+            background-color: #FFF;
+            color: #E21E24;
+            border: 1px solid #E21E24;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #E21E24;
+            color: #FFF;
+        }
+
+        video {
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border: 2px solid #333;
+        }
+
+        /* Side menu styles */
+        .side-menu {
+            height: 100%;
+            width: 0;
+            position: fixed;
+            top: 0;
+            right: 0;
+            background-color: #E21E24;
+            overflow-x: hidden;
+            transition: 0.5s;
+            padding-top: 60px;
+            z-index: 1000;
+        }
+
+        .side-menu a {
+            padding: 10px 15px;
+            text-decoration: none;
+            font-size: 20px;
+            color: #FFF;
+            display: block;
+            transition: 0.3s;
+        }
+
+        .side-menu a:hover {
+            background-color: #B10E13;
+        }
+
+        .side-menu .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 36px;
+            margin-left: 50px;
+        }
+
+        /* Hamburger menu icon */
+        .menu-icon {
+            cursor: pointer;
+            font-size: 24px;
+            margin-right: 10px;
+        }
+
+        .menu-icon:hover {
+            color: #FFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h1>RC Car Client</h1>
+        <span id="status" class="status-indicator">Disconnected</span>
+        <span id="fps" class="fps-meter">FPS: 0</span>
+        <input type="text" id="pi_ip" placeholder="Raspberry Pi IP" style="width: auto;">
+        <button onclick="connect()">Connect</button>
+        <div class="menu-icon" onclick="openSideMenu()">&#9776;</div>
+    </div>
+    <div id="side-menu" class="side-menu">
+        <a href="javascript:void(0)" class="close-btn" onclick="closeSideMenu()">&times;</a>
+        <label for="servo_trim_pos">Servo Trim Positive:</label>
+        <input type="number" id="servo_trim_pos" min="0" max="100" value="0">
+        <label for="servo_trim_neg">Servo Trim Negative:</label>
+        <input type="number" id="servo_trim_neg" min="0" max="100" value="0">
+        <label for="max_speed">Max Speed:</label>
+        <input type="number" id="max_speed" min="0" max="100" value="100">
+        <div class="checkbox">
+            <input type="checkbox" id="controller_checkbox" checked> <!-- Default to checked -->
+            <label for="controller_checkbox">Use Gaming Controller</label>
+        </div>
+        <button onclick="sendSettings()">Apply Settings</button>
+        <button onclick="toggleFullScreen()">Fullscreen</button>
+    </div>
+    <div class="container">
+        <!-- Video element will be dynamically initialized after connection -->
+    </div>
+
+    <script>
+        var ws;
+        var lastIpAddress = localStorage.getItem("lastIpAddress");
+        if (lastIpAddress) {
+            document.getElementById("pi_ip").value = lastIpAddress;
+        }
+
+        function openWebSocket(ip) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                return;
+            }
+
+            ws = new WebSocket('ws://' + ip + ':8765');
+
+            ws.onopen = function() {
+                updateStatus(true);
+                initializeVideo();
+                startFPSCounter();
+            };
+
+            // Do not close the WebSocket connection here
+            // ws.onclose = function() {
+            //     updateStatus(false);
+            // };
+        }
+
+        function closeWebSocket() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function openSideMenu() {
+            document.getElementById("side-menu").style.width = "250px";
+        }
+
+        function closeSideMenu() {
+            document.getElementById("side-menu").style.width = "0";
+        }
+
+        function toggleFullScreen() {
+            var video = document.getElementById("video");
+            if (video.requestFullscreen) {
+                video.requestFullscreen();
+            } else if (video.mozRequestFullScreen) {
+                video.mozRequestFullScreen();
+            } else if (video.webkitRequestFullscreen) {
+                video.webkitRequestFullscreen();
+            } else if (video.msRequestFullscreen) {
+                video.msRequestFullscreen();
+            }
+        }
+
+        function connect() {
+            var ip = document.getElementById("pi_ip").value;
+            localStorage.setItem("lastIpAddress", ip);
+            openWebSocket(ip);
+        }
+
+        function initializeVideo() {
+            var container = document.querySelector(".container");
+            var existingVideo = document.getElementById("video");
+            if (existingVideo) {
+                container.removeChild(existingVideo);
+            }
+            var video = document.createElement("img"); // Use <img> element for MJPG Streamer
+            video.id = "video";
+            video.src = "http://" + document.getElementById("pi_ip").value + ":8080/?action=stream"; // MJPG Streamer URL
+            video.style.maxWidth = "100%";
+            container.appendChild(video);
+        }
+
+        function startFPSCounter() {
+            var video = document.getElementById("video");
+            var fpsElement = document.getElementById("fps");
+
+            var fps = 0;
+            var start = Date.now();
+
+            function countFPS() {
+                fps++;
+                var elapsed = Date.now() - start;
+                if (elapsed >= 1000) {
+                    fpsElement.textContent = "FPS: " + fps;
+                    fps = 0;
+                    start = Date.now();
+                }
+                requestAnimationFrame(countFPS);
+            }
+
+            countFPS();
+        }
+
+        function updateStatus(connected) {
+            var statusElement = document.getElementById("status");
+            if (connected) {
+                statusElement.textContent = "Connected";
+                statusElement.style.color = "green";
+            } else {
+                statusElement.textContent = "Disconnected";
+                statusElement.style.color = "red";
+            }
+        }
+
+        function updateControls() {
+            // Check if there is a connected gamepad
+            var gamepad = navigator.getGamepads()[0];
+            if (gamepad) {
+                var throttle = ((gamepad.axes[1] - 1) * -90)-90; // Map vertical movement to throttle (0-100)
+                var steering = gamepad.axes[2] * 90; // Map horizontal movement to steering (-90 to 90)
+
+                // Send throttle and steering values to WebSocket server
+                var controls = throttle.toFixed(0) + "," + steering.toFixed(0);
+                ws.send(controls);
+                var delayInMilliseconds = 0; //delay
+            }
+
+            // Call updateControls again on the next animation frame
+            requestAnimationFrame(updateControls);
+        }
+
+        // Initialize WebSocket connection and start updating controls
+        window.addEventListener("gamepadconnected", function(e) {
+            console.log("Gamepad connected:", e.gamepad.id);
+            var controller = e.gamepad;
+            // Update controls when controller input changes
+            updateControls(controller);
+        });
+    </script>
+</body>
+</html>
