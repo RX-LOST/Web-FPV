@@ -1,4 +1,4 @@
-First, install mjpg streamer. This is what will be running our video.
+First, install mjpg streamer. This is how will be running our video.
 
 Get instructions here
 
