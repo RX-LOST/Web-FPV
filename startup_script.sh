@@ -10,5 +10,7 @@ sudo mjpg_streamer -i 'input_uvc.so -d /dev/video0 -r 1280x720 -f 15 -n' -o 'out
 cd /home/pi/
 # Start pigpiofactory service
 sudo pigpiod
+#cd to github repository folder
+cd /home/pi/Web-FPV/
 # Start WebSocket server
-sudo python3 websocket_server4.py &
+sudo python3 websocket_server.py &
