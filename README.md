@@ -45,3 +45,5 @@ Connect the gnd pins of the servo, esc, and pi together, the 5v of the esc and s
 Lastly, connect the usb webcam to the pi before powering on. (I reccomend a webcam with low compression and lower resolution to allow for the least amount of processing and latency)
 
 ###### If you've come this far, well done! You now have an internet controlled rc car vtx and controller rx. To use 4g lte, buy a small 4g wifi hotspot usb stick, and you should be good to go!
+
+Please note. Your internet speeds for both your computer and pi, your computer's multitasking abilities, and numer of tabs open at the time heavily effect latency. 
