@@ -33,13 +33,15 @@
         .top-bar {
             background: var(--surface);
             padding: 10px 16px;
-            display: flex;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
             align-items: center;
-            justify-content: space-between;
             border-bottom: 1px solid var(--border);
             position: relative;
             z-index: 10001;
         }
+        .top-bar-right { display: flex; align-items: center; gap: 8px; justify-self: end; }
+        .top-bar-center { display: flex; align-items: center; justify-self: center; }
         .top-bar-left { display: flex; align-items: center; gap: 12px; }
         .top-bar h1 { font-size: 16px; font-weight: 600; }
         .status {
@@ -250,6 +252,10 @@
         .btn-primary { background: var(--primary); color: white; }
         .btn-primary:hover { background: var(--primary-hover); }
         .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+        .btn-ghost.pending { background: #c0392b; color: #fff; border-color: #c0392b; }
+        .btn-ghost.pending:hover { background: #e74c3c; }
+        #resetVideoBtn { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); }
+        #resetVideoBtn:hover { background: rgba(255,255,255,0.2); }
         .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
         .gamepad-status {
             display: flex;
@@ -303,6 +309,111 @@
         .mode-btn.active {
             color: white;
         }
+        .help-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10002;
+        }
+        .help-modal.open { display: flex; align-items: center; justify-content: center; }
+        .help-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+        }
+        .help-content {
+            position: relative;
+            z-index: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            max-width: 600px;
+            width: calc(100% - 40px);
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .help-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: var(--surface);
+            border-radius: 12px 12px 0 0;
+        }
+        .help-header h2 { font-size: 18px; font-weight: 600; }
+        .help-close {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .help-close:hover { color: var(--text); }
+        .help-body {
+            padding: 20px;
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+        .help-body::-webkit-scrollbar { width: 0; }
+        .help-section {
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .help-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .help-section h3 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+        .help-section p {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+        .help-section ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .help-section li {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-dim);
+            padding: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        .help-section li::before {
+            content: "›";
+            position: absolute;
+            left: 0;
+            color: var(--primary);
+            font-weight: 700;
+        }
+        .help-section kbd {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 12px;
+            font-family: monospace;
+            color: var(--text);
+        }
         .mobile-joystick-container {
             display: none;
             position: fixed;
@@ -340,6 +451,24 @@
             .top-bar h1 { font-size: 14px; }
             .stats { gap: 8px; }
         }
+        .help-btn {
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+            line-height: 1;
+        }
+        .help-btn:hover { color: var(--text); border-color: var(--text); }
     </style>
 </head>
 <body>
@@ -351,14 +480,19 @@
                 <span id="statusText">Connecting...</span>
             </div>
         </div>
-        <div class="stats">
-            <div class="stat">FPS: <span id="fpsCounter">0</span></div>
-            <div class="stat">Ping: <span id="latencyCounter">--</span>ms</div>
-            <div class="stat">Rate: <span id="msgRate">0</span>/s</div>
-            <div class="stat pc-mode-hidden" id="speedStats"><span>FWD:</span> <span id="fwdSpeedVal">100</span><span>%</span></div>
-            <div class="stat pc-mode-hidden" id="speedStatsRev"><span>REV:</span> <span id="revSpeedVal">100</span><span>%</span></div>
+        <div class="top-bar-center">
+            <div class="stats">
+                <div class="stat">FPS: <span id="fpsCounter">0</span></div>
+                <div class="stat">Ping: <span id="latencyCounter">--</span>ms</div>
+                <div class="stat">Rate: <span id="msgRate">0</span>/s</div>
+                <div class="stat pc-mode-hidden" id="speedStats"><span>FWD:</span> <span id="fwdSpeedVal">100</span><span>%</span></div>
+                <div class="stat pc-mode-hidden" id="speedStatsRev"><span>REV:</span> <span id="revSpeedVal">100</span><span>%</span></div>
+            </div>
         </div>
-        <span class="menu-icon" onclick="toggleMenu()">&#9776;</span>
+        <div class="top-bar-right">
+            <button class="btn btn-ghost help-btn" onclick="toggleHelp()">?</button>
+            <span class="menu-icon" onclick="toggleMenu()">&#9776;</span>
+        </div>
     </div>
 
     <div class="video-wrapper">
@@ -444,10 +578,10 @@
             </div>
 
             <div class="menu-section">
-                <h3>Advanced</h3>
+                <h3>Video Settings</h3>
                 <div class="slider-group">
                     <label><span>Aspect Ratio</span></label>
-                    <select id="aspectRatioSelect" onchange="updateResolutionOptions()" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                    <select id="aspectRatioSelect" onchange="updateResolutionOptions();checkPendingSettings();" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
                         <option value="4:3">4:3</option>
                         <option value="16:9">16:9</option>
                         <option value="3:2">3:2</option>
@@ -456,10 +590,30 @@
                 </div>
                 <div class="slider-group">
                     <label><span>Resolution</span></label>
-                    <select id="resolutionSelect" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                    <select id="resolutionSelect" onchange="checkPendingSettings()" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
                     </select>
                 </div>
-                <button class="btn btn-ghost" onclick="applyResolution()" style="margin-bottom:14px;">Apply Resolution</button>
+                <div class="slider-group">
+                    <label><span>FPS</span></label>
+                    <select id="fpsSelect" onchange="onFpsChange();checkPendingSettings();" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                        <option value="24">24</option>
+                        <option value="30" selected>30</option>
+                        <option value="60">60</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+                <div class="slider-group" id="customFpsGroup" style="display:none;">
+                    <label><span>Custom FPS</span><span id="customFpsVal">45</span></label>
+                    <input type="range" id="customFps" min="10" max="120" value="45" oninput="onCustomFpsInput(this.value);checkPendingSettings();">
+                </div>
+                <div class="video-settings-actions" style="display:flex;gap:8px;margin-bottom:14px;">
+                    <button class="btn btn-ghost" id="applyVideoBtn" onclick="applyVideoSettings()" style="flex:1;">Apply Video Settings</button>
+                    <button class="btn btn-ghost" id="resetVideoBtn" onclick="resetVideoSettings()" style="display:none;width:36px;padding:0;font-size:18px;color:#fff;">&times;</button>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <h3>Advanced</h3>
                 <div class="slider-group">
                     <label><span>Servo Trim +</span><span id="servoTrimPosVal">0</span></label>
                     <input type="range" id="servo_trim_pos" min="0" max="100" value="0" oninput="updateSlider('servoTrimPosVal', this.value)">
@@ -498,6 +652,9 @@
         var latencyStart = 0;
         var piIp = window.location.hostname || '127.0.0.1';
         var videoElement = document.getElementById('video');
+        var appliedResolution = localStorage.getItem('webFPV_resolution') || '640x480';
+        var appliedFps = localStorage.getItem('webFPV_fps') || '30';
+        var appliedCustomFps = localStorage.getItem('webFPV_custom_fps') || '45';
         var videoCanvas = document.getElementById('videoCanvas');
         var videoCtx = videoCanvas.getContext('2d');
         var overlay = document.getElementById('videoOverlay');
@@ -600,6 +757,18 @@
             });
             var ratio = localStorage.getItem('webFPV_aspect_ratio');
             if (ratio) document.getElementById('aspectRatioSelect').value = ratio;
+            var savedFps = localStorage.getItem('webFPV_fps');
+            if (savedFps) {
+                document.getElementById('fpsSelect').value = savedFps;
+                if (savedFps === 'custom') {
+                    document.getElementById('customFpsGroup').style.display = 'block';
+                    var savedCustom = localStorage.getItem('webFPV_custom_fps');
+                    if (savedCustom) {
+                        document.getElementById('customFps').value = savedCustom;
+                        document.getElementById('customFpsVal').textContent = savedCustom;
+                    }
+                }
+            }
             ['max_fwd_speed', 'max_rev_speed', 'ramp_up_speed'].forEach(function(id) {
                 var val = localStorage.getItem('webFPV_' + id);
                 if (val !== null) {
@@ -744,12 +913,64 @@
             localStorage.setItem('webFPV_aspect_ratio', ratio);
         }
 
-        function applyResolution() {
+        function applyVideoSettings() {
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
             var res = document.getElementById('resolutionSelect').value;
+            var fpsVal = document.getElementById('fpsSelect').value;
+            var fps = fpsVal === 'custom' ? document.getElementById('customFps').value : fpsVal;
             localStorage.setItem('webFPV_resolution', res);
-            showOverlay('initial', 'Changing resolution...');
+            localStorage.setItem('webFPV_fps', fpsVal);
+            localStorage.setItem('webFPV_applied_fps', fps);
+            appliedResolution = res;
+            appliedFps = fpsVal;
+            appliedCustomFps = fpsVal === 'custom' ? fps : appliedCustomFps;
+            showOverlay('initial', 'Changing video settings...');
             ws.send('resolution:' + res);
+            ws.send('fps:' + fps);
+            checkPendingSettings();
+        }
+
+        function resetVideoSettings() {
+            document.getElementById('resolutionSelect').value = appliedResolution;
+            document.getElementById('fpsSelect').value = appliedFps;
+            if (appliedFps === 'custom') {
+                document.getElementById('customFpsGroup').style.display = 'block';
+                document.getElementById('customFps').value = appliedCustomFps;
+                document.getElementById('customFpsVal').textContent = appliedCustomFps;
+            } else {
+                document.getElementById('customFpsGroup').style.display = 'none';
+            }
+            checkPendingSettings();
+        }
+
+        function checkPendingSettings() {
+            var res = document.getElementById('resolutionSelect').value;
+            var fpsVal = document.getElementById('fpsSelect').value;
+            var fps = fpsVal === 'custom' ? document.getElementById('customFps').value : fpsVal;
+            var hasChanges = res !== appliedResolution || fps !== appliedFps || (fpsVal === 'custom' && fps !== appliedCustomFps);
+            var btn = document.getElementById('applyVideoBtn');
+            var resetBtn = document.getElementById('resetVideoBtn');
+            if (hasChanges) {
+                btn.classList.add('pending');
+                resetBtn.style.display = 'block';
+            } else {
+                btn.classList.remove('pending');
+                resetBtn.style.display = 'none';
+            }
+        }
+
+        function onFpsChange() {
+            var fps = document.getElementById('fpsSelect').value;
+            if (fps === 'custom') {
+                document.getElementById('customFpsGroup').style.display = 'block';
+            } else {
+                document.getElementById('customFpsGroup').style.display = 'none';
+            }
+        }
+
+        function onCustomFpsInput(val) {
+            document.getElementById('customFpsVal').textContent = val;
+            localStorage.setItem('webFPV_custom_fps', val);
         }
 
         function handleConfigResponse(configRes) {
@@ -760,7 +981,9 @@
                         document.documentElement.style.setProperty('--aspect', aspectMap[ratio]);
                         updateResolutionOptions();
                         document.getElementById('resolutionSelect').value = configRes;
+                        appliedResolution = configRes;
                         localStorage.setItem('webFPV_resolution', configRes);
+                        checkPendingSettings();
                         return;
                     }
                 }
@@ -780,10 +1003,17 @@
                 initializeVideo();
                 startMsgRateCounter();
                 ws.send('query_config');
+                var savedFps = localStorage.getItem('webFPV_applied_fps') || localStorage.getItem('webFPV_fps');
+                if (savedFps && savedFps !== 'custom') {
+                    ws.send('fps:' + savedFps);
+                } else if (savedFps === 'custom') {
+                    var customFps = localStorage.getItem('webFPV_custom_fps') || '45';
+                    ws.send('fps:' + customFps);
+                }
                 ws.onmessage = function(event) {
                     if (event.data === 'pong') {
                         document.getElementById('latencyCounter').textContent = Date.now() - latencyStart;
-                    } else if (event.data === 'resolution_ok') {
+                    } else if (event.data === 'resolution_ok' || event.data === 'fps_ok') {
                         videoEverLoaded = false;
                         streamActive = false;
                         videoLostFrames = 0;
@@ -992,6 +1222,16 @@
             document.getElementById('menuBackdrop').classList.toggle('open');
         }
 
+        function toggleHelp() {
+            document.getElementById('helpModal').classList.toggle('open');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                document.getElementById('helpModal').classList.remove('open');
+            }
+        });
+
         function applySettings() { saveSettings(); }
         function resetSettings() {
             ['max_speed', 'steering_trim', 'deadzone', 'servo_trim_pos', 'servo_trim_neg'].forEach(function(id) {
@@ -1045,5 +1285,61 @@
         updateGamepadLoop();
         connect();
     </script>
+
+    <div class="help-modal" id="helpModal">
+        <div class="help-backdrop" onclick="toggleHelp()"></div>
+        <div class="help-content">
+            <div class="help-header">
+                <h2>Help & Usage Guide</h2>
+                <button class="help-close" onclick="toggleHelp()">&times;</button>
+            </div>
+            <div class="help-body">
+                <div class="help-section">
+                    <h3>Control Modes</h3>
+                    <ul>
+                        <li><strong>Gamepad</strong> — Plug in a controller and go. Left stick drives, right stick steers.</li>
+                        <li><strong>PC Mode</strong> — Drive with keyboard and mouse. W/S accelerates, mouse steers — great for quick testing at your desk.</li>
+                        <li><strong>Joysticks</strong> — On-screen virtual joysticks that pop up on mobile. Left drives, right turns.</li>
+                    </ul>
+                    <p>Only one mode can be active at a time — switching to a new one shuts down the old.</p>
+                </div>
+
+                <div class="help-section">
+                    <h3>PC Mode</h3>
+                    <ul>
+                        <li>Hold <kbd>Shift</kbd> and <strong>scroll your wheel</strong> to tweak max forward speed without opening the menu</li>
+                        <li>The FWD/REV percentages in the top bar show your current throttle ceiling at a glance</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h3>Fine-Tuning</h3>
+                    <ul>
+                        <li><strong>Steering Trim</strong> — Car pulling to one side? Nudge this to straighten it out</li>
+                        <li><strong>Deadzone</strong> — Stops jittery center inputs from sending phantom commands</li>
+                        <li><strong>Servo Trim +/−</strong> — Micro-adjustments for your servo's neutral position</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h3>Video Settings</h3>
+                    <ul>
+                        <li>Drop the resolution if the stream feels sluggish — lower res means snappier response</li>
+                        <li>Expect a ~2 second video blink when switching resolutions while the stream reboots</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h3>Troubleshooting</h3>
+                    <ul>
+                        <li><strong>No video</strong> — Double-check the webcam is plugged in and run <code>systemctl status ustreamer</code> on the Pi</li>
+                        <li><strong>No controls</strong> — Make sure the status dot is green. For gamepads, check the Bluetooth connection and drivers.</li>
+                        <li><strong>Frozen video</strong> — Red overlay means the stream dropped. It'll try to reconnect on its own</li>
+                        <li><strong>Laggy</strong> — Drop the resolution or FPS, and close any extra browser tabs hogging bandwidth</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

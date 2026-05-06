@@ -37,19 +37,25 @@ def save_config(key, value):
         f.write(f"fps={config['fps']}\n")
         f.write(f"quality={config['quality']}\n")
 
-def restart_ustreamer(resolution):
+def restart_ustreamer(resolution=None, fps=None):
     try:
         subprocess.run(["pkill", "ustreamer"], stderr=subprocess.DEVNULL)
     except:
         pass
-    save_config("resolution", resolution)
+    config = load_config()
+    if resolution:
+        save_config("resolution", resolution)
+        config = load_config()
+    if fps:
+        save_config("fps", fps)
+        config = load_config()
     cmd = [
         "/opt/ustreamer/ustreamer",
         "--device=/dev/video0",
-        f"--resolution={resolution}",
+        f"--resolution={config['resolution']}",
         "--format=JPEG",
-        f"--quality={load_config()['quality']}",
-        f"--desired-fps={load_config()['fps']}",
+        f"--quality={config['quality']}",
+        f"--desired-fps={config['fps']}",
         "--drop-same-frames=30",
         "--host=0.0.0.0",
         "--port=8080",
@@ -79,7 +85,13 @@ async def control_rc_car(websocket, path):
                     resolution = msg.split(":", 1)[1]
                     print(f"Changing resolution to: {resolution}")
                     await websocket.send("resolution_ok")
-                    restart_ustreamer(resolution)
+                    restart_ustreamer(resolution=resolution)
+                    continue
+                if msg.startswith("fps:"):
+                    fps = msg.split(":", 1)[1]
+                    print(f"Changing FPS to: {fps}")
+                    await websocket.send("fps_ok")
+                    restart_ustreamer(fps=fps)
                     continue
                 if msg.startswith("query_config"):
                     config = load_config()
