@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Web-FPV</title>
+    <style>
+        :root {
+            --bg: #0f0f0f;
+            --surface: #1a1a1a;
+            --surface2: #252525;
+            --primary: #e21e24;
+            --primary-hover: #ff2d34;
+            --text: #ffffff;
+            --text-dim: #888888;
+            --success: #00c853;
+            --error: #ff1744;
+            --warning: #ff9100;
+            --border: #333333;
+            --radius: 8px;
+            --aspect: 1.7778;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            height: 100vh;
+            overflow: hidden;
+        }
+        html { overflow: hidden; }
+        .top-bar {
+            background: var(--surface);
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            position: relative;
+            z-index: 10001;
+        }
+        .top-bar-left { display: flex; align-items: center; gap: 12px; }
+        .top-bar h1 { font-size: 16px; font-weight: 600; }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: var(--surface2);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--error);
+            transition: background 0.3s;
+        }
+        .status-dot.connected { background: var(--success); }
+        .status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .stats {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        .stat { display: flex; align-items: center; gap: 3px; }
+        .menu-icon { cursor: pointer; font-size: 22px; padding: 4px; }
+        .video-wrapper {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            height: calc(100vh - 52px);
+            padding: 10px;
+            overflow: hidden;
+        }
+        .video-container {
+            position: relative;
+            background: #333;
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 2px solid var(--border);
+            width: 100%;
+            max-width: calc(100vw - 20px);
+            max-height: calc(100vh - 72px);
+            aspect-ratio: var(--aspect);
+            object-fit: contain;
+        }
+        .video-container canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .video-container img {
+            display: none;
+        }
+        .video-overlay-top {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 6px;
+            z-index: 3;
+        }
+        .overlay-badge {
+            padding: 3px 8px;
+            background: rgba(0,0,0,0.75);
+            border-radius: 4px;
+            font-size: 11px;
+            backdrop-filter: blur(4px);
+        }
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            z-index: 2;
+            transition: background 0.4s, opacity 0.4s;
+            pointer-events: none;
+        }
+        .video-overlay.initial {
+            background: rgba(50, 50, 50, 0.95);
+        }
+        .video-overlay.disconnected {
+            background: rgba(180, 0, 0, 0.3);
+        }
+        .video-overlay.active {
+            background: rgba(0, 0, 0, 0);
+            opacity: 0;
+        }
+        .overlay-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+        .gear-spinner {
+            width: 36px;
+            height: 36px;
+            animation: spin 1.2s linear infinite;
+            fill: #fff;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .side-menu {
+            height: 100%;
+            width: 0;
+            position: fixed;
+            top: 0;
+            right: 0;
+            background: var(--surface);
+            overflow-y: auto;
+            transition: width 0.3s;
+            padding-top: 50px;
+            z-index: 9999;
+            border-left: 1px solid var(--border);
+        }
+        .side-menu::-webkit-scrollbar { width: 0; }
+        .side-menu { -ms-overflow-style: none; scrollbar-width: none; }
+        .side-menu.open { width: 300px; max-width: 90vw; }
+        .side-menu-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9998;
+        }
+        .side-menu-backdrop.open { display: block; }
+        .menu-icon { cursor: pointer; font-size: 22px; padding: 4px; z-index: 10000; position: relative; user-select: none; }
+        .side-menu .close-btn {
+            position: absolute;
+            top: 12px;
+            right: 15px;
+            font-size: 28px;
+            color: var(--text-dim);
+            cursor: pointer;
+            line-height: 1;
+        }
+        .menu-content { padding: 10px 20px 20px; }
+        .menu-section {
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .menu-section:last-child { border-bottom: none; }
+        .menu-section h3 {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .slider-group { margin-bottom: 14px; }
+        .slider-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-bottom: 6px;
+        }
+        .slider-group input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: var(--surface2);
+            border-radius: 2px;
+            outline: none;
+        }
+        .slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: var(--primary);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+        .checkbox-group input[type="checkbox"] { accent-color: var(--primary); }
+        select { -webkit-appearance: none; appearance: none; cursor: pointer; }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+        .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+        .gamepad-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            padding: 8px;
+            background: var(--surface2);
+            border-radius: var(--radius);
+            margin-bottom: 10px;
+        }
+        .mobile-joystick-container {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            justify-content: space-around;
+            padding: 0 20px;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .mobile-joystick-container.active { display: flex; }
+        .joystick {
+            width: 120px;
+            height: 120px;
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            position: relative;
+            pointer-events: all;
+            touch-action: none;
+        }
+        .joystick-knob {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        @media (max-width: 480px) {
+            .top-bar { padding: 8px 12px; }
+            .top-bar h1 { font-size: 14px; }
+            .stats { gap: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div class="top-bar-left">
+            <h1>Web-FPV</h1>
+            <div class="status">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+        <div class="stats">
+            <div class="stat">FPS: <span id="fpsCounter">0</span></div>
+            <div class="stat">Ping: <span id="latencyCounter">--</span>ms</div>
+            <div class="stat">Rate: <span id="msgRate">0</span>/s</div>
+        </div>
+        <span class="menu-icon" onclick="toggleMenu()">&#9776;</span>
+    </div>
+
+    <div class="video-wrapper">
+        <div class="video-container">
+            <canvas id="videoCanvas"></canvas>
+            <img id="video" src="" alt="Video Stream" crossorigin="anonymous">
+            <div class="video-overlay-top">
+                <span class="overlay-badge" id="resBadge">--</span>
+            </div>
+            <div class="video-overlay initial" id="videoOverlay">
+                <svg class="gear-spinner" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+                </svg>
+                <span class="overlay-text" id="overlayText">Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="mobile-joystick-container" id="mobileJoysticks">
+        <div class="joystick" id="throttleJoystick" ontouchstart="handleJoystickTouch(event, 'throttle')" ontouchmove="handleJoystickMove(event, 'throttle')" ontouchend="handleJoystickEnd(event, 'throttle')">
+            <div class="joystick-knob" id="throttleKnob"></div>
+        </div>
+        <div class="joystick" id="steeringJoystick" ontouchstart="handleJoystickTouch(event, 'steering')" ontouchmove="handleJoystickMove(event, 'steering')" ontouchend="handleJoystickEnd(event, 'steering')">
+            <div class="joystick-knob" id="steeringKnob"></div>
+        </div>
+    </div>
+
+    <div class="side-menu-backdrop" id="menuBackdrop" onclick="toggleMenu()"></div>
+
+    <div class="side-menu" id="sideMenu">
+        <span class="close-btn" onclick="toggleMenu()">&times;</span>
+        <div class="menu-content">
+            <div class="menu-section">
+                <h3>Controls</h3>
+                <div class="gamepad-status" id="gamepadStatus">
+                    <span>&#x1F3AE;</span>
+                    <span id="gamepadText">No controller</span>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="controller_checkbox" checked>
+                    <label for="controller_checkbox">Use Game Controller</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="mobileJoystickCheck">
+                    <label for="mobileJoystickCheck">Show Mobile Joysticks</label>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <h3>Throttle & Steering</h3>
+                <div class="slider-group">
+                    <label><span>Max Speed</span><span id="maxSpeedVal">100%</span></label>
+                    <input type="range" id="max_speed" min="0" max="100" value="100" oninput="updateSlider('maxSpeedVal', this.value+'%')">
+                </div>
+                <div class="slider-group">
+                    <label><span>Steering Trim</span><span id="trimVal">0</span></label>
+                    <input type="range" id="steering_trim" min="-30" max="30" value="0" oninput="updateSlider('trimVal', this.value)">
+                </div>
+                <div class="slider-group">
+                    <label><span>Deadzone</span><span id="deadzoneVal">10%</span></label>
+                    <input type="range" id="deadzone" min="0" max="30" value="10" oninput="updateSlider('deadzoneVal', this.value+'%')">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="invertThrottle">
+                    <label for="invertThrottle">Invert Throttle</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="invertSteering">
+                    <label for="invertSteering">Invert Steering</label>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <h3>Advanced</h3>
+                <div class="slider-group">
+                    <label><span>Aspect Ratio</span></label>
+                    <select id="aspectRatioSelect" onchange="updateResolutionOptions()" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                        <option value="4:3">4:3</option>
+                        <option value="16:9">16:9</option>
+                        <option value="3:2">3:2</option>
+                        <option value="1:1">1:1</option>
+                    </select>
+                </div>
+                <div class="slider-group">
+                    <label><span>Resolution</span></label>
+                    <select id="resolutionSelect" style="width:100%;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;">
+                    </select>
+                </div>
+                <button class="btn btn-ghost" onclick="applyResolution()" style="margin-bottom:14px;">Apply Resolution</button>
+                <div class="slider-group">
+                    <label><span>Servo Trim +</span><span id="servoTrimPosVal">0</span></label>
+                    <input type="range" id="servo_trim_pos" min="0" max="100" value="0" oninput="updateSlider('servoTrimPosVal', this.value)">
+                </div>
+                <div class="slider-group">
+                    <label><span>Servo Trim -</span><span id="servoTrimNegVal">0</span></label>
+                    <input type="range" id="servo_trim_neg" min="0" max="100" value="0" oninput="updateSlider('servoTrimNegVal', this.value)">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="darkModeCheck" checked onchange="toggleDarkMode()">
+                    <label for="darkModeCheck">Dark Mode</label>
+                </div>
+            </div>
+
+            <div class="menu-section">
+                <h3>Actions</h3>
+                <button class="btn btn-primary" onclick="applySettings()" style="margin-bottom:8px;">Apply & Save</button>
+                <button class="btn btn-ghost" onclick="toggleFullScreen()" style="margin-bottom:8px;">Fullscreen</button>
+                <button class="btn btn-ghost" onclick="testLatency()" style="margin-bottom:8px;">Test Latency</button>
+                <button class="btn btn-ghost" onclick="resetSettings()">Reset to Defaults</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var ws = null;
+        var reconnectAttempts = 0;
+        var reconnectDelay = 1000;
+        var maxReconnectDelay = 10000;
+        var gamepadIndex = null;
+        var joystickData = { throttle: {x:0, y:0, active:false}, steering: {x:0, y:0, active:false} };
+        var msgCount = 0;
+        var msgRateInterval = null;
+        var lastSendTime = 0;
+        var sendInterval = 16;
+        var latencyStart = 0;
+        var piIp = window.location.hostname || '127.0.0.1';
+        var videoElement = document.getElementById('video');
+        var videoCanvas = document.getElementById('videoCanvas');
+        var videoCtx = videoCanvas.getContext('2d');
+        var overlay = document.getElementById('videoOverlay');
+        var overlayText = document.getElementById('overlayText');
+        var streamActive = false;
+        var videoEverLoaded = false;
+        var videoLostFrames = 0;
+        var wasConnected = false;
+        var fpsCount = 0;
+        var fpsStartTime = Date.now();
+        var frameCapture = null;
+
+        var resolutions = {
+            "4:3":  ["320x240", "640x480", "800x600", "1024x768", "1280x960", "1600x1200"],
+            "16:9": ["640x360", "960x540", "1280x720", "1920x1080"],
+            "3:2":  ["480x320", "720x480", "960x640", "1280x853", "1600x1067"],
+            "1:1":  ["320x320", "480x480", "640x640", "800x800", "1024x1024"]
+        };
+
+        var aspectMap = {
+            "4:3": 1.3333,
+            "16:9": 1.7778,
+            "3:2": 1.5,
+            "1:1": 1
+        };
+
+        function setCanvasSize() {
+            var container = videoCanvas.parentElement;
+            videoCanvas.width = container.clientWidth;
+            videoCanvas.height = container.clientHeight;
+        }
+        window.addEventListener('resize', setCanvasSize);
+        setCanvasSize();
+
+        function drawGreyScreen() {
+            videoCtx.fillStyle = '#444';
+            videoCtx.fillRect(0, 0, videoCanvas.width, videoCanvas.height);
+        }
+
+        function captureFrame() {
+            try {
+                if (videoElement.videoWidth > 0) {
+                    videoCtx.drawImage(videoElement, 0, 0, videoCanvas.width, videoCanvas.height);
+                    fpsCount++;
+                }
+            } catch(e) {}
+        }
+
+        function startFrameLoop() {
+            function loop() {
+                if (streamActive) {
+                    captureFrame();
+                }
+                var elapsed = Date.now() - fpsStartTime;
+                if (elapsed >= 1000) {
+                    document.getElementById('fpsCounter').textContent = fpsCount;
+                    if (streamActive && fpsCount === 0) {
+                        videoLostFrames++;
+                        if (videoLostFrames >= 5 && videoEverLoaded) {
+                            streamActive = false;
+                            videoLostFrames = 0;
+                            showOverlay('disconnected', 'Video lost');
+                        }
+                    } else if (fpsCount > 0) {
+                        videoLostFrames = 0;
+                        videoEverLoaded = true;
+                    }
+                    fpsCount = 0;
+                    fpsStartTime = Date.now();
+                }
+                requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function showOverlay(state, text) {
+            overlay.className = 'video-overlay';
+            overlay.classList.add(state);
+            overlayText.textContent = text;
+        }
+
+        function hideOverlay() {
+            overlay.className = 'video-overlay active';
+        }
+
+        function loadSettings() {
+            ['max_speed', 'steering_trim', 'deadzone', 'invertThrottle', 'invertSteering', 'servo_trim_pos', 'servo_trim_neg', 'mobileJoystickCheck'].forEach(function(id) {
+                var val = localStorage.getItem('webFPV_' + id);
+                if (val !== null) {
+                    var el = document.getElementById(id);
+                    if (el) {
+                        if (el.type === 'checkbox') el.checked = val === 'true';
+                        else el.value = val;
+                    }
+                }
+            });
+            var ratio = localStorage.getItem('webFPV_aspect_ratio');
+            if (ratio) document.getElementById('aspectRatioSelect').value = ratio;
+        }
+
+        function saveSettings() {
+            ['max_speed', 'steering_trim', 'deadzone', 'invertThrottle', 'invertSteering', 'servo_trim_pos', 'servo_trim_neg'].forEach(function(id) {
+                var el = document.getElementById(id);
+                localStorage.setItem('webFPV_' + id, el.type === 'checkbox' ? el.checked : el.value);
+            });
+            localStorage.setItem('webFPV_aspect_ratio', document.getElementById('aspectRatioSelect').value);
+        }
+
+        function updateSlider(id, val) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = val;
+        }
+
+        function updateResolutionOptions() {
+            var ratio = document.getElementById('aspectRatioSelect').value;
+            var sel = document.getElementById('resolutionSelect');
+            sel.innerHTML = '';
+            if (resolutions[ratio]) {
+                for (var i = 0; i < resolutions[ratio].length; i++) {
+                    var opt = document.createElement('option');
+                    opt.value = resolutions[ratio][i];
+                    opt.textContent = resolutions[ratio][i];
+                    sel.appendChild(opt);
+                }
+            }
+            var current = localStorage.getItem('webFPV_resolution');
+            if (current) sel.value = current;
+            document.documentElement.style.setProperty('--aspect', aspectMap[ratio]);
+            localStorage.setItem('webFPV_aspect_ratio', ratio);
+        }
+
+        function applyResolution() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            var res = document.getElementById('resolutionSelect').value;
+            localStorage.setItem('webFPV_resolution', res);
+            showOverlay('initial', 'Changing resolution...');
+            ws.send('resolution:' + res);
+        }
+
+        function handleConfigResponse(configRes) {
+            for (var ratio in resolutions) {
+                for (var i = 0; i < resolutions[ratio].length; i++) {
+                    if (resolutions[ratio][i] === configRes) {
+                        document.getElementById('aspectRatioSelect').value = ratio;
+                        document.documentElement.style.setProperty('--aspect', aspectMap[ratio]);
+                        updateResolutionOptions();
+                        document.getElementById('resolutionSelect').value = configRes;
+                        localStorage.setItem('webFPV_resolution', configRes);
+                        return;
+                    }
+                }
+            }
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            updateStatus('connecting');
+            ws = new WebSocket('ws://' + piIp + ':8765');
+
+            ws.onopen = function() {
+                updateStatus('connected');
+                reconnectAttempts = 0;
+                reconnectDelay = 1000;
+                wasConnected = true;
+                initializeVideo();
+                startMsgRateCounter();
+                ws.send('query_config');
+                ws.onmessage = function(event) {
+                    if (event.data === 'pong') {
+                        document.getElementById('latencyCounter').textContent = Date.now() - latencyStart;
+                    } else if (event.data === 'resolution_ok') {
+                        videoEverLoaded = false;
+                        streamActive = false;
+                        videoLostFrames = 0;
+                        setTimeout(function() {
+                            initializeVideo();
+                        }, 1500);
+                    } else if (event.data.startsWith('config:')) {
+                        handleConfigResponse(event.data.split(':')[1]);
+                    }
+                };
+            };
+
+            ws.onclose = function() { onDisconnect(); scheduleReconnect(); };
+            ws.onerror = function() { onDisconnect(); scheduleReconnect(); };
+        }
+
+        function onDisconnect() {
+            streamActive = false;
+            if (wasConnected) {
+                showOverlay('disconnected', 'Disconnected');
+                updateStatus('disconnected');
+            } else {
+                updateStatus('connecting');
+            }
+            videoElement.src = '';
+        }
+
+        function scheduleReconnect() {
+            if (reconnectAttempts < 20) {
+                reconnectAttempts++;
+                reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
+                setTimeout(connect, reconnectDelay);
+            } else if (wasConnected) {
+                updateStatus('disconnected');
+            }
+        }
+
+        function updateStatus(state) {
+            var dot = document.getElementById('statusDot');
+            var text = document.getElementById('statusText');
+            dot.className = 'status-dot';
+            if (state === 'connected') { dot.classList.add('connected'); text.textContent = 'Connected'; }
+            else if (state === 'connecting') { dot.classList.add('connecting'); text.textContent = 'Connecting...'; }
+            else { text.textContent = 'Disconnected'; }
+        }
+
+        function initializeVideo() {
+            drawGreyScreen();
+            videoElement.src = "http://" + piIp + ":8080/stream";
+            videoElement.onload = function() {
+                streamActive = true;
+                videoEverLoaded = true;
+                videoLostFrames = 0;
+                hideOverlay();
+            };
+        }
+
+        function startMsgRateCounter() {
+            msgCount = 0;
+            if (msgRateInterval) clearInterval(msgRateInterval);
+            msgRateInterval = setInterval(function() {
+                document.getElementById('msgRate').textContent = msgCount;
+                msgCount = 0;
+            }, 1000);
+        }
+
+        function sendControls(throttle, steering) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            var now = Date.now();
+            if (now - lastSendTime < sendInterval) return;
+            lastSendTime = now;
+            msgCount++;
+            ws.send(Math.round(throttle) + "," + Math.round(steering));
+        }
+
+        window.addEventListener("gamepadconnected", function(e) {
+            gamepadIndex = e.gamepad.index;
+            document.getElementById('gamepadText').textContent = e.gamepad.id.split('(')[0].substring(0, 25) || 'Connected';
+            updateGamepadLoop();
+        });
+
+        window.addEventListener("gamepaddisconnected", function(e) {
+            if (gamepadIndex === e.gamepad.index) {
+                gamepadIndex = null;
+                document.getElementById('gamepadText').textContent = 'No controller';
+            }
+        });
+
+        function updateGamepadLoop() {
+            if (gamepadIndex === null) return;
+            var gp = navigator.getGamepads()[gamepadIndex];
+            if (!gp) { gamepadIndex = null; return; }
+
+            if (document.getElementById('controller_checkbox').checked) {
+                var deadzone = parseInt(document.getElementById('deadzone').value) / 100;
+                var maxSpeed = parseInt(document.getElementById('max_speed').value) / 100;
+                var trim = parseInt(document.getElementById('steering_trim').value);
+                var invertT = document.getElementById('invertThrottle').checked ? -1 : 1;
+                var invertS = document.getElementById('invertSteering').checked ? -1 : 1;
+
+                var rawThrottle = -gp.axes[1];
+                var rawSteering = gp.axes[2] || gp.axes[0];
+
+                rawThrottle = Math.abs(rawThrottle) < deadzone ? 0 : rawThrottle;
+                rawSteering = Math.abs(rawSteering) < deadzone ? 0 : rawSteering;
+
+                sendControls(rawThrottle * 90 * maxSpeed * invertT, (rawSteering * 90 + trim) * invertS);
+            }
+            requestAnimationFrame(updateGamepadLoop);
+        }
+
+        function handleJoystickTouch(e, type) {
+            e.preventDefault();
+            joystickData[type].active = true;
+            if (document.getElementById('mobileJoystickCheck').checked) updateMobileJoystickLoop();
+        }
+
+        function handleJoystickMove(e, type) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            var rect = document.getElementById(type + 'Joystick').getBoundingClientRect();
+            var x = Math.max(-1, Math.min(1, ((touch.clientX - rect.left) / rect.width - 0.5) * 2));
+            var y = Math.max(-1, Math.min(1, ((touch.clientY - rect.top) / rect.height - 0.5) * 2));
+            joystickData[type].x = x;
+            joystickData[type].y = y;
+            var knob = document.getElementById(type + 'Knob');
+            knob.style.left = (50 + x * 30) + '%';
+            knob.style.top = (50 + y * 30) + '%';
+        }
+
+        function handleJoystickEnd(e, type) {
+            joystickData[type].active = false;
+            joystickData[type].x = 0;
+            joystickData[type].y = 0;
+            var knob = document.getElementById(type + 'Knob');
+            knob.style.left = '50%';
+            knob.style.top = '50%';
+        }
+
+        function updateMobileJoystickLoop() {
+            if (!joystickData.throttle.active && !joystickData.steering.active) return;
+            var maxSpeed = parseInt(document.getElementById('max_speed').value) / 100;
+            var trim = parseInt(document.getElementById('steering_trim').value);
+            var invertT = document.getElementById('invertThrottle').checked ? -1 : 1;
+            var invertS = document.getElementById('invertSteering').checked ? -1 : 1;
+            sendControls(-joystickData.throttle.y * 90 * maxSpeed * invertT, (joystickData.steering.x * 90 + trim) * invertS);
+            requestAnimationFrame(updateMobileJoystickLoop);
+        }
+
+        function detectMobile() {
+            if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                document.getElementById('mobileJoystickCheck').checked = true;
+                document.getElementById('mobileJoysticks').classList.add('active');
+            }
+        }
+
+        function testLatency() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            latencyStart = Date.now();
+            ws.send('ping');
+        }
+
+        function toggleFullScreen() {
+            var container = document.querySelector('.video-container');
+            if (!document.fullscreenElement) {
+                (container.requestFullscreen || container.webkitRequestFullscreen || container.msRequestFullscreen).call(container);
+            } else {
+                (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen).call(document);
+            }
+        }
+
+        function toggleMenu() {
+            document.getElementById('sideMenu').classList.toggle('open');
+            document.getElementById('menuBackdrop').classList.toggle('open');
+        }
+
+        function applySettings() { saveSettings(); }
+        function resetSettings() {
+            ['max_speed', 'steering_trim', 'deadzone', 'servo_trim_pos', 'servo_trim_neg'].forEach(function(id) {
+                var el = document.getElementById(id);
+                el.value = id === 'deadzone' ? 10 : id === 'max_speed' ? 100 : 0;
+            });
+            ['invertThrottle', 'invertSteering', 'mobileJoystickCheck'].forEach(function(id) {
+                document.getElementById(id).checked = false;
+            });
+            document.getElementById('aspectRatioSelect').value = '4:3';
+            updateResolutionOptions();
+            document.getElementById('resolutionSelect').value = '640x480';
+            document.documentElement.style.setProperty('--aspect', 1.3333);
+            localStorage.removeItem('webFPV_aspect_ratio');
+            localStorage.removeItem('webFPV_resolution');
+            saveSettings();
+        }
+
+        function toggleDarkMode() {
+            var dark = document.getElementById('darkModeCheck').checked;
+            document.documentElement.style.setProperty('--bg', dark ? '#0f0f0f' : '#f5f5f5');
+            document.documentElement.style.setProperty('--surface', dark ? '#1a1a1a' : '#ffffff');
+            document.documentElement.style.setProperty('--surface2', dark ? '#252525' : '#e0e0e0');
+            document.documentElement.style.setProperty('--text', dark ? '#ffffff' : '#000000');
+            document.documentElement.style.setProperty('--text-dim', dark ? '#888888' : '#666666');
+            document.documentElement.style.setProperty('--border', dark ? '#333333' : '#cccccc');
+        }
+
+        loadSettings();
+        detectMobile();
+        updateSlider('maxSpeedVal', document.getElementById('max_speed').value + '%');
+        updateSlider('trimVal', document.getElementById('steering_trim').value);
+        updateSlider('deadzoneVal', document.getElementById('deadzone').value + '%');
+        updateSlider('servoTrimPosVal', document.getElementById('servo_trim_pos').value);
+        updateSlider('servoTrimNegVal', document.getElementById('servo_trim_neg').value);
+        updateResolutionOptions();
+        drawGreyScreen();
+        showOverlay('initial', 'Connecting...');
+        startFrameLoop();
+        connect();
+    </script>
+</body>
+</html>
