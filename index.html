@@ -259,7 +259,49 @@
             padding: 8px;
             background: var(--surface2);
             border-radius: var(--radius);
+            margin-top: 12px;
             margin-bottom: 10px;
+        }
+        .pc-mode-hidden { display: none; }
+        .pc-mode-visible { display: block; }
+        .mode-toggle {
+            display: flex;
+            background: var(--surface2);
+            border-radius: 12px;
+            padding: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        .mode-pill {
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: calc(33.333% - 2.667px);
+            height: calc(100% - 8px);
+            background: var(--primary);
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+            z-index: 1;
+        }
+        .mode-toggle[data-mode="gamepad"] .mode-pill { transform: translateX(0); }
+        .mode-toggle[data-mode="pc"] .mode-pill { transform: translateX(100%); }
+        .mode-toggle[data-mode="joysticks"] .mode-pill { transform: translateX(200%); }
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            position: relative;
+            z-index: 2;
+            transition: color 0.3s;
+            border-radius: 8px;
+        }
+        .mode-btn.active {
+            color: white;
         }
         .mobile-joystick-container {
             display: none;
@@ -313,6 +355,8 @@
             <div class="stat">FPS: <span id="fpsCounter">0</span></div>
             <div class="stat">Ping: <span id="latencyCounter">--</span>ms</div>
             <div class="stat">Rate: <span id="msgRate">0</span>/s</div>
+            <div class="stat pc-mode-hidden" id="speedStats"><span>FWD:</span> <span id="fwdSpeedVal">100</span><span>%</span></div>
+            <div class="stat pc-mode-hidden" id="speedStatsRev"><span>REV:</span> <span id="revSpeedVal">100</span><span>%</span></div>
         </div>
         <span class="menu-icon" onclick="toggleMenu()">&#9776;</span>
     </div>
@@ -348,18 +392,30 @@
         <span class="close-btn" onclick="toggleMenu()">&times;</span>
         <div class="menu-content">
             <div class="menu-section">
-                <h3>Controls</h3>
+                <h3>Control Mode</h3>
+                <div class="mode-toggle" id="modeToggle" data-mode="gamepad">
+                    <div class="mode-pill"></div>
+                    <button class="mode-btn active" onclick="setMode('gamepad')">Gamepad</button>
+                    <button class="mode-btn" onclick="setMode('pc')">PC Mode</button>
+                    <button class="mode-btn" onclick="setMode('joysticks')">Joysticks</button>
+                </div>
                 <div class="gamepad-status" id="gamepadStatus">
                     <span>&#x1F3AE;</span>
                     <span id="gamepadText">No controller</span>
                 </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="controller_checkbox" checked>
-                    <label for="controller_checkbox">Use Game Controller</label>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="mobileJoystickCheck">
-                    <label for="mobileJoystickCheck">Show Mobile Joysticks</label>
+                <div class="pc-mode-hidden" id="pcModeSliders">
+                    <div class="slider-group">
+                        <label><span>Max Forward Speed</span><span id="maxFwdSpeedVal">100%</span></label>
+                        <input type="range" id="max_fwd_speed" min="0" max="100" value="100" oninput="updatePcSlider('maxFwdSpeedVal', this.value)">
+                    </div>
+                    <div class="slider-group">
+                        <label><span>Max Reverse Speed</span><span id="maxRevSpeedVal">100%</span></label>
+                        <input type="range" id="max_rev_speed" min="0" max="100" value="100" oninput="updatePcSlider('maxRevSpeedVal', this.value)">
+                    </div>
+                    <div class="slider-group">
+                        <label><span>Ramp-Up Speed</span><span id="rampUpSpeedVal">5</span></label>
+                        <input type="range" id="ramp_up_speed" min="1" max="20" value="5" oninput="updateSlider('rampUpSpeedVal', this.value)">
+                    </div>
                 </div>
             </div>
 
@@ -453,6 +509,10 @@
         var fpsCount = 0;
         var fpsStartTime = Date.now();
         var frameCapture = null;
+        var pcModeEnabled = false;
+        var throttleValue = 0;
+        var keysDown = {};
+        var mouseX = 0.5;
 
         var resolutions = {
             "4:3":  ["320x240", "640x480", "800x600", "1024x768", "1280x960", "1600x1200"],
@@ -528,7 +588,7 @@
         }
 
         function loadSettings() {
-            ['max_speed', 'steering_trim', 'deadzone', 'invertThrottle', 'invertSteering', 'servo_trim_pos', 'servo_trim_neg', 'mobileJoystickCheck'].forEach(function(id) {
+            ['max_speed', 'steering_trim', 'deadzone', 'invertThrottle', 'invertSteering', 'servo_trim_pos', 'servo_trim_neg'].forEach(function(id) {
                 var val = localStorage.getItem('webFPV_' + id);
                 if (val !== null) {
                     var el = document.getElementById(id);
@@ -540,6 +600,17 @@
             });
             var ratio = localStorage.getItem('webFPV_aspect_ratio');
             if (ratio) document.getElementById('aspectRatioSelect').value = ratio;
+            ['max_fwd_speed', 'max_rev_speed', 'ramp_up_speed'].forEach(function(id) {
+                var val = localStorage.getItem('webFPV_' + id);
+                if (val !== null) {
+                    var el = document.getElementById(id);
+                    if (el) el.value = val;
+                }
+            });
+            var savedMode = localStorage.getItem('webFPV_control_mode');
+            setMode(savedMode === 'pc' || savedMode === 'joysticks' ? savedMode : 'gamepad');
+            updatePcSlider('maxFwdSpeedVal', document.getElementById('max_fwd_speed').value);
+            updatePcSlider('maxRevSpeedVal', document.getElementById('max_rev_speed').value);
         }
 
         function saveSettings() {
@@ -553,6 +624,106 @@
         function updateSlider(id, val) {
             var el = document.getElementById(id);
             if (el) el.textContent = val;
+        }
+
+        function updatePcSlider(id, val) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = val + '%';
+            document.getElementById('fwdSpeedVal').textContent = document.getElementById('max_fwd_speed').value;
+            document.getElementById('revSpeedVal').textContent = document.getElementById('max_rev_speed').value;
+        }
+
+        function setMode(mode) {
+            pcModeEnabled = mode === 'pc';
+            var toggle = document.getElementById('modeToggle');
+            var btns = toggle.querySelectorAll('.mode-btn');
+            toggle.setAttribute('data-mode', mode);
+            for (var i = 0; i < btns.length; i++) {
+                btns[i].classList.remove('active');
+            }
+            if (mode === 'gamepad') btns[0].classList.add('active');
+            else if (mode === 'pc') btns[1].classList.add('active');
+            else if (mode === 'joysticks') btns[2].classList.add('active');
+
+            if (mode === 'pc') {
+                document.getElementById('pcModeSliders').classList.remove('pc-mode-hidden');
+                document.getElementById('pcModeSliders').classList.add('pc-mode-visible');
+                document.querySelectorAll('#speedStats, #speedStatsRev').forEach(function(el) {
+                    el.classList.remove('pc-mode-hidden');
+                    el.classList.add('pc-mode-visible');
+                });
+                document.getElementById('mobileJoysticks').classList.remove('active');
+                throttleValue = 0;
+            } else if (mode === 'joysticks') {
+                document.getElementById('pcModeSliders').classList.remove('pc-mode-visible');
+                document.getElementById('pcModeSliders').classList.add('pc-mode-hidden');
+                document.querySelectorAll('#speedStats, #speedStatsRev').forEach(function(el) {
+                    el.classList.remove('pc-mode-visible');
+                    el.classList.add('pc-mode-hidden');
+                });
+                document.getElementById('mobileJoysticks').classList.add('active');
+                throttleValue = 0;
+            } else {
+                document.getElementById('pcModeSliders').classList.remove('pc-mode-visible');
+                document.getElementById('pcModeSliders').classList.add('pc-mode-hidden');
+                document.querySelectorAll('#speedStats, #speedStatsRev').forEach(function(el) {
+                    el.classList.remove('pc-mode-visible');
+                    el.classList.add('pc-mode-hidden');
+                });
+                document.getElementById('mobileJoysticks').classList.remove('active');
+                throttleValue = 0;
+            }
+            localStorage.setItem('webFPV_control_mode', mode);
+        }
+
+        document.addEventListener('keydown', function(e) {
+            keysDown[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', function(e) {
+            keysDown[e.key.toLowerCase()] = false;
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            mouseX = e.clientX / window.innerWidth;
+        });
+
+        document.addEventListener('wheel', function(e) {
+            if (pcModeEnabled && (e.shiftKey || keysDown['shift'])) {
+                e.preventDefault();
+                var fwdSlider = document.getElementById('max_fwd_speed');
+                var newVal = parseInt(fwdSlider.value) - (e.deltaY > 0 ? 5 : -5);
+                fwdSlider.value = Math.max(0, Math.min(100, newVal));
+                updatePcSlider('maxFwdSpeedVal', fwdSlider.value);
+            }
+        }, { passive: false });
+
+        function getPCModeControls() {
+            if (!pcModeEnabled) return null;
+            var rampSpeed = parseInt(document.getElementById('ramp_up_speed').value);
+            var maxFwd = parseInt(document.getElementById('max_fwd_speed').value) / 100;
+            var maxRev = parseInt(document.getElementById('max_rev_speed').value) / 100;
+            var trim = parseInt(document.getElementById('steering_trim').value);
+            var invertT = document.getElementById('invertThrottle').checked ? -1 : 1;
+            var invertS = document.getElementById('invertSteering').checked ? -1 : 1;
+
+            if (keysDown['w'] || keysDown['arrowup']) {
+                throttleValue = Math.min(throttleValue + rampSpeed, 90 * maxFwd);
+            } else if (keysDown['s'] || keysDown['arrowdown']) {
+                throttleValue = Math.max(throttleValue - rampSpeed, -90 * maxRev);
+            } else {
+                if (throttleValue > 0) throttleValue = Math.max(throttleValue - rampSpeed, 0);
+                else if (throttleValue < 0) throttleValue = Math.min(throttleValue + rampSpeed, 0);
+            }
+
+            var rawSteering = (mouseX - 0.5) * 2;
+            var deadzone = parseInt(document.getElementById('deadzone').value) / 100;
+            rawSteering = Math.abs(rawSteering) < deadzone ? 0 : rawSteering;
+
+            var throttle = throttleValue * invertT;
+            var steering = (rawSteering * 90 + trim) * invertS;
+
+            return { throttle: throttle, steering: steering };
         }
 
         function updateResolutionOptions() {
@@ -688,10 +859,26 @@
             ws.send(Math.round(throttle) + "," + Math.round(steering));
         }
 
+        function checkForGamepads() {
+            var gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            for (var i = 0; i < gamepads.length; i++) {
+                if (gamepads[i]) {
+                    if (gamepadIndex === null) {
+                        gamepadIndex = gamepads[i].index;
+                        document.getElementById('gamepadText').textContent = gamepads[i].id.split('(')[0].substring(0, 25) || 'Connected';
+                        updateGamepadLoop();
+                        return;
+                    }
+                }
+            }
+        }
+
         window.addEventListener("gamepadconnected", function(e) {
-            gamepadIndex = e.gamepad.index;
-            document.getElementById('gamepadText').textContent = e.gamepad.id.split('(')[0].substring(0, 25) || 'Connected';
-            updateGamepadLoop();
+            if (gamepadIndex === null) {
+                gamepadIndex = e.gamepad.index;
+                document.getElementById('gamepadText').textContent = e.gamepad.id.split('(')[0].substring(0, 25) || 'Connected';
+                updateGamepadLoop();
+            }
         });
 
         window.addEventListener("gamepaddisconnected", function(e) {
@@ -702,11 +889,27 @@
         });
 
         function updateGamepadLoop() {
-            if (gamepadIndex === null) return;
+            if (pcModeEnabled) {
+                var controls = getPCModeControls();
+                if (controls) sendControls(controls.throttle, controls.steering);
+                requestAnimationFrame(updateGamepadLoop);
+                return;
+            }
+            if (gamepadIndex === null) {
+                checkForGamepads();
+                requestAnimationFrame(updateGamepadLoop);
+                return;
+            }
             var gp = navigator.getGamepads()[gamepadIndex];
-            if (!gp) { gamepadIndex = null; return; }
+            if (!gp) {
+                gamepadIndex = null;
+                document.getElementById('gamepadText').textContent = 'No controller';
+                checkForGamepads();
+                requestAnimationFrame(updateGamepadLoop);
+                return;
+            }
 
-            if (document.getElementById('controller_checkbox').checked) {
+            if (!pcModeEnabled) {
                 var deadzone = parseInt(document.getElementById('deadzone').value) / 100;
                 var maxSpeed = parseInt(document.getElementById('max_speed').value) / 100;
                 var trim = parseInt(document.getElementById('steering_trim').value);
@@ -727,7 +930,7 @@
         function handleJoystickTouch(e, type) {
             e.preventDefault();
             joystickData[type].active = true;
-            if (document.getElementById('mobileJoystickCheck').checked) updateMobileJoystickLoop();
+            updateMobileJoystickLoop();
         }
 
         function handleJoystickMove(e, type) {
@@ -764,8 +967,8 @@
 
         function detectMobile() {
             if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                document.getElementById('mobileJoystickCheck').checked = true;
-                document.getElementById('mobileJoysticks').classList.add('active');
+                var savedMode = localStorage.getItem('webFPV_control_mode');
+                if (!savedMode) setMode('joysticks');
             }
         }
 
@@ -795,15 +998,26 @@
                 var el = document.getElementById(id);
                 el.value = id === 'deadzone' ? 10 : id === 'max_speed' ? 100 : 0;
             });
-            ['invertThrottle', 'invertSteering', 'mobileJoystickCheck'].forEach(function(id) {
+            ['invertThrottle', 'invertSteering'].forEach(function(id) {
                 document.getElementById(id).checked = false;
             });
+            document.getElementById('max_fwd_speed').value = 100;
+            document.getElementById('max_rev_speed').value = 100;
+            document.getElementById('ramp_up_speed').value = 5;
+            updatePcSlider('maxFwdSpeedVal', '100');
+            updatePcSlider('maxRevSpeedVal', '100');
+            updateSlider('rampUpSpeedVal', '5');
+            setMode('gamepad');
             document.getElementById('aspectRatioSelect').value = '4:3';
             updateResolutionOptions();
             document.getElementById('resolutionSelect').value = '640x480';
             document.documentElement.style.setProperty('--aspect', 1.3333);
             localStorage.removeItem('webFPV_aspect_ratio');
             localStorage.removeItem('webFPV_resolution');
+            localStorage.removeItem('webFPV_max_fwd_speed');
+            localStorage.removeItem('webFPV_max_rev_speed');
+            localStorage.removeItem('webFPV_ramp_up_speed');
+            localStorage.removeItem('webFPV_control_mode');
             saveSettings();
         }
 
@@ -828,6 +1042,7 @@
         drawGreyScreen();
         showOverlay('initial', 'Connecting...');
         startFrameLoop();
+        updateGamepadLoop();
         connect();
     </script>
 </body>
